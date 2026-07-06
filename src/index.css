@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=JetBrains+Mono:wght@300;400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Custom fade animations and editor layout tweaks */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Editorial Aesthetic Helper Classes */
+.serif-accent {
+  font-family: 'Playfair Display', 'Georgia', serif;
+  font-style: italic;
+}
+
+.vertical-rail {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.border-subtle {
+  border-color: rgba(249, 249, 247, 0.1);
+}
+
+.text-dim {
+  color: rgba(249, 249, 247, 0.5);
+}
+
+.btn-outline {
+  border: 1px solid rgba(249, 249, 247, 0.25);
+  border-radius: 9999px;
+  padding: 6px 18px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-family: "Inter", sans-serif;
+  font-weight: 500;
+  transition: all 0.25s ease;
+}
+
+.btn-outline:hover {
+  background-color: #F9F9F7;
+  color: #0C0C0C;
+  border-color: #F9F9F7;
+}
+
+/* Dark scrollbar customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(12, 12, 12, 0.9);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(249, 249, 247, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(249, 249, 247, 0.3);
+}
+

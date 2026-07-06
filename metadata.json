@@ -1,0 +1,6 @@
+{
+  "name": "JUSBT Claim Verification Dashboard",
+  "description": "Ruthlessly accurate, non-partisan, evidence-first system specialized in cataloging and dissecting viral political, governmental, and Trump-related claims using Gemini Search Grounding.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
