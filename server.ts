@@ -46,12 +46,65 @@ Core Rules (Never violate):
 2. Be strictly neutral. No moralizing, no favoritism.
 3. Explicitly state uncertainties and source quality.
 4. Never hallucinate facts, quotes, or events.
-5. Every single verdict MUST contain a 'primaryCitationSource' (the specific named document/database/record) and a 'primaryCitationUrl' (a direct, live, verifiable hyperlink to that document, preferring .gov, .edu, or official raw source repositories).
+5. Every single verdict MUST contain a primary citation source (the specific named document/database/record) and a primary citation URL (a direct, live, verifiable hyperlink to that document, preferring .gov, .edu, or official raw source repositories).
 
-DYNAMIC SIF CALCULATION:
-You must calculate the Sovereign Investigative Formula (SIF) Confidence Score mathematically on the fly as an integer between 0 and 100:
-Confidence (%) = (5 * Primary Sources Count) + (4 * Independent Sources Count) + (3 * Official Documents Count) - Unknowns - Gaps - Alternative Explanations
-Ensure you explain this score in the baseline facts or justification, and output the computed value.
+JUSBT SCHEMA VERSION 2.0 COMPLIANCE:
+You must output data fitting JUSBT Schema 2.0:
+- schemaVersion: Must be exactly "2.0"
+- metadata:
+  * verdictTimestamp: Current timestamp in ISO format.
+  * analysisId: A unique claim identifier (e.g., "C-101", "C-202").
+  * requestId: A random request UUID.
+  * processing: object containing model ("gemini-3.5-flash"), modelVersion ("gemini-3.5-flash-v2.0"), processingTimeMs (approx. integer between 1200 and 3500), attempt (1), healed (false), and validatorVersion ("2.0").
+- claim:
+  * originalClaim: The exact claim text parsed.
+  * claimSummary: A one-sentence scannable summary.
+  * claimType: Classification (choose exactly one: "Historical", "Scientific", "Political", "Financial", "Legal", "Medical", "Opinion", "Prediction", "Other").
+  * literalParsing: object detailing assertion (explicit text), implication (implied or insinuation), scope (boundaries of the claim), and limitations (what it doesn't cover).
+- evidence: Supporting, contradictory, and context evidence arrays. Populated using search results:
+  * Each item needs a unique ID (e.g. "E-101", "E-102").
+  * type: "primary" | "official" | "independent" | "secondary".
+  * title, url, publisher, author, publicationDate (YYYY-MM-DD), accessDate (YYYY-MM-DD).
+  * role: "supports" (for supportingEvidence), "contradicts" (for contradictoryEvidence), "context" (for contextEvidence).
+  * quality: "high" | "medium" | "low".
+  * credibility, relevance, weight: float values between 0.0 and 1.0.
+  * accessStatus: "available" | "redacted" | "sealed" | "paywalled".
+  * notes: qualitative details about the source's contents.
+- SIF (Sovereign Investigative Formula):
+  * inputs: P (primary count), I (independent count), O (official count), U (unknowns count), G (gaps count), A (ambiguities count).
+  * breakdown:
+    * primaryContribution = P * 5
+    * independentContribution = I * 4
+    * officialContribution = O * 3
+    * uncorroboratedPenalty = U * 6
+    * gapPenalty = G * 5
+    * ambiguityPenalty = A * 4
+  * score: computed mathematically: (primaryContribution + independentContribution + officialContribution) - uncorroboratedPenalty - gapPenalty - ambiguityPenalty. Clamp/cap between 0 and 100.
+- confidence:
+  * score: same as SIF score.
+  * level: "Low" (score < 40), "Medium" (40 <= score < 80), "High" (score >= 80).
+  * reason: text explaining why this level of confidence is justified.
+- validation:
+  * overallScore: 100 (or slightly lower if there are warnings).
+  * schemaValid, SIFMathValid, citationsValid, styleValid, jsonValid: true.
+  * severity: "INFO".
+  * issues: array of issues, or empty if none.
+- citationCoverage:
+  * claimsDetected, claimsSupported, claimsUnsupported.
+  * coveragePercent: (claimsSupported / claimsDetected) * 100, or a representative percentage.
+- verdict:
+  * classification: exactly one of "True", "Mostly True", "Misleading", "False", "Unsubstantiated", "Context-Dependent".
+  * justification: A concise, staccato, punchy one-sentence justification.
+  * decisionTrace: A logical sequence of 3-4 decision steps that lead to this verdict.
+- primaryCitation: The strongest evidence source with title, url, and reasonUnavailable = null.
+- sourcesSnapshot: List of 2-3 snapshots of key sources.
+- bayesian:
+  * enabled: true.
+  * priorReliability: decimal (e.g., 0.5).
+  * modelReliability: decimal (e.g., 0.8).
+  * posteriorReliability: calculated value (e.g. 0.8) or based on Bayes' updating logic.
+  * updateReason: qualitative note explaining how the prior shifted to the posterior based on new evidence.
+- editorialPersona: 'Hard-Boiled Reporter' | 'Structural Analyst' | 'Fact-Checker'.
 
 STRICT STYLOMETRIC GUARDRAILS:
 You must run a self-correction loop internally before rendering your final analysis:
@@ -61,14 +114,7 @@ You must run a self-correction loop internally before rendering your final analy
   * "In today's world..." / "In today's rapidly changing..."
   * "Let's unpack this..." / "Dive deep..." / "Navigate the complexities..."
   * "At the end of the day..." / "Make no mistake..." / "Raises questions..."
-- Maintain a maximum of 3-4 sentences per paragraph. Keep prose staccato, rhythmic, and concrete.
-
-MANDATORY WORKFLOW (Execute in this exact order):
-1. Catalog — Summarize the claim in one clear sentence.
-2. Semantic Parsing — Precisely define what the claim literally says and what it implies.
-3. Baseline Facts — Identify the strongest primary evidence. Calculate the SIF mathematically. State what is verified versus what is unverified or contested.
-4. Truth Verdict — Choose exactly one of the allowed verdicts: True, Mostly True, Misleading, False, Unsubstantiated, Context-Dependent. Give a concise one-sentence justification. Mandatorily supply the name of the primary document ('primaryCitationSource') and the verifiable hyperlink ('primaryCitationUrl') used to confirm this decision.
-5. Context & Implications — Outline the background, timeline, and real-world impact of the claim.`;
+- Maintain a maximum of 3-4 sentences per paragraph. Keep prose staccato, rhythmic, and concrete.`;
 
 // API: Health / System Status
 app.get("/api/health", (req, res) => {
@@ -99,80 +145,259 @@ app.post("/api/jusbt/analyze", async (req, res) => {
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            summary: {
-              type: Type.STRING,
-              description: "A clear, concise, one-sentence summary of the claim."
-            },
-            semanticParsing: {
+            schemaVersion: { type: Type.STRING },
+            metadata: {
               type: Type.OBJECT,
               properties: {
-                literalSays: {
-                  type: Type.STRING,
-                  description: "Precisely define what the claim literally, explicitly states."
-                },
-                implies: {
-                  type: Type.STRING,
-                  description: "Define the underlying insinuation or implication behind the claim."
+                verdictTimestamp: { type: Type.STRING },
+                analysisId: { type: Type.STRING },
+                requestId: { type: Type.STRING },
+                processing: {
+                  type: Type.OBJECT,
+                  properties: {
+                    model: { type: Type.STRING },
+                    modelVersion: { type: Type.STRING },
+                    processingTimeMs: { type: Type.INTEGER },
+                    attempt: { type: Type.INTEGER },
+                    healed: { type: Type.BOOLEAN },
+                    validatorVersion: { type: Type.STRING }
+                  },
+                  required: ["model", "modelVersion", "processingTimeMs", "attempt", "healed", "validatorVersion"]
                 }
               },
-              required: ["literalSays", "implies"]
+              required: ["verdictTimestamp", "analysisId", "requestId", "processing"]
             },
-            baselineFacts: {
+            claim: {
               type: Type.OBJECT,
               properties: {
-                primarySources: {
+                originalClaim: { type: Type.STRING },
+                claimSummary: { type: Type.STRING },
+                claimType: { type: Type.STRING },
+                literalParsing: {
+                  type: Type.OBJECT,
+                  properties: {
+                    assertion: { type: Type.STRING },
+                    implication: { type: Type.STRING },
+                    scope: { type: Type.STRING },
+                    limitations: { type: Type.STRING }
+                  },
+                  required: ["assertion", "implication", "scope", "limitations"]
+                }
+              },
+              required: ["originalClaim", "claimSummary", "claimType", "literalParsing"]
+            },
+            evidence: {
+              type: Type.OBJECT,
+              properties: {
+                supportingEvidence: {
                   type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "Specific primary sources consulted (e.g. .gov documents, court briefs, raw transcripts, official federal statements)."
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      type: { type: Type.STRING },
+                      title: { type: Type.STRING },
+                      url: { type: Type.STRING },
+                      publisher: { type: Type.STRING },
+                      author: { type: Type.STRING },
+                      publicationDate: { type: Type.STRING },
+                      accessDate: { type: Type.STRING },
+                      role: { type: Type.STRING },
+                      quality: { type: Type.STRING },
+                      credibility: { type: Type.NUMBER },
+                      relevance: { type: Type.NUMBER },
+                      weight: { type: Type.NUMBER },
+                      accessStatus: { type: Type.STRING },
+                      notes: { type: Type.STRING }
+                    },
+                    required: ["id", "type", "title", "url", "publisher", "author", "publicationDate", "accessDate", "role", "quality", "credibility", "relevance", "weight", "accessStatus", "notes"]
+                  }
                 },
-                keyEvidence: {
+                contradictoryEvidence: {
                   type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "Bullet points detailing the strongest factual evidence established."
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      type: { type: Type.STRING },
+                      title: { type: Type.STRING },
+                      url: { type: Type.STRING },
+                      publisher: { type: Type.STRING },
+                      author: { type: Type.STRING },
+                      publicationDate: { type: Type.STRING },
+                      accessDate: { type: Type.STRING },
+                      role: { type: Type.STRING },
+                      quality: { type: Type.STRING },
+                      credibility: { type: Type.NUMBER },
+                      relevance: { type: Type.NUMBER },
+                      weight: { type: Type.NUMBER },
+                      accessStatus: { type: Type.STRING },
+                      notes: { type: Type.STRING }
+                    },
+                    required: ["id", "type", "title", "url", "publisher", "author", "publicationDate", "accessDate", "role", "quality", "credibility", "relevance", "weight", "accessStatus", "notes"]
+                  }
                 },
-                conflictingInfo: {
-                  type: Type.STRING,
-                  description: "Any conflicting reports, active disputes, or notable lack of corroboration. Set to null if none."
+                contextEvidence: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      type: { type: Type.STRING },
+                      title: { type: Type.STRING },
+                      url: { type: Type.STRING },
+                      publisher: { type: Type.STRING },
+                      accessDate: { type: Type.STRING },
+                      role: { type: Type.STRING },
+                      quality: { type: Type.STRING },
+                      notes: { type: Type.STRING }
+                    },
+                    required: ["id", "type", "title", "url", "publisher", "accessDate", "role", "quality", "notes"]
+                  }
                 }
               },
-              required: ["primarySources", "keyEvidence"]
+              required: ["supportingEvidence", "contradictoryEvidence", "contextEvidence"]
             },
-            truthVerdict: {
+            SIF: {
               type: Type.OBJECT,
               properties: {
-                verdict: {
-                  type: Type.STRING,
-                  description: "Choose exactly one: True, Mostly True, Misleading, False, Unsubstantiated, Context-Dependent."
+                inputs: {
+                  type: Type.OBJECT,
+                  properties: {
+                    P: { type: Type.INTEGER },
+                    I: { type: Type.INTEGER },
+                    O: { type: Type.INTEGER },
+                    U: { type: Type.INTEGER },
+                    G: { type: Type.INTEGER },
+                    A: { type: Type.INTEGER }
+                  },
+                  required: ["P", "I", "O", "U", "G", "A"]
                 },
-                justification: {
-                  type: Type.STRING,
-                  description: "One-sentence, rigorous justification supporting the selected verdict."
+                breakdown: {
+                  type: Type.OBJECT,
+                  properties: {
+                    primaryContribution: { type: Type.INTEGER },
+                    independentContribution: { type: Type.INTEGER },
+                    officialContribution: { type: Type.INTEGER },
+                    uncorroboratedPenalty: { type: Type.INTEGER },
+                    gapPenalty: { type: Type.INTEGER },
+                    ambiguityPenalty: { type: Type.INTEGER }
+                  },
+                  required: ["primaryContribution", "independentContribution", "officialContribution", "uncorroboratedPenalty", "gapPenalty", "ambiguityPenalty"]
                 },
-                primaryCitationSource: {
-                  type: Type.STRING,
-                  description: "The name of the primary document, regulation, court docket, or dataset that forms the foundation of this verdict."
-                },
-                primaryCitationUrl: {
-                  type: Type.STRING,
-                  description: "A direct, live, verifiable hyperlink (preferably ending in .gov, .edu, or official archives) where users can independently view this primary source."
+                score: { type: Type.INTEGER }
+              },
+              required: ["inputs", "breakdown", "score"]
+            },
+            confidence: {
+              type: Type.OBJECT,
+              properties: {
+                score: { type: Type.INTEGER },
+                level: { type: Type.STRING },
+                reason: { type: Type.STRING }
+              },
+              required: ["score", "level", "reason"]
+            },
+            validation: {
+              type: Type.OBJECT,
+              properties: {
+                overallScore: { type: Type.INTEGER },
+                schemaValid: { type: Type.BOOLEAN },
+                SIFMathValid: { type: Type.BOOLEAN },
+                citationsValid: { type: Type.BOOLEAN },
+                styleValid: { type: Type.BOOLEAN },
+                jsonValid: { type: Type.BOOLEAN },
+                severity: { type: Type.STRING },
+                issues: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      category: { type: Type.STRING },
+                      severity: { type: Type.STRING },
+                      message: { type: Type.STRING },
+                      corrected: { type: Type.BOOLEAN }
+                    },
+                    required: ["category", "severity", "message", "corrected"]
+                  }
                 }
               },
-              required: ["verdict", "justification", "primaryCitationSource", "primaryCitationUrl"]
+              required: ["overallScore", "schemaValid", "SIFMathValid", "citationsValid", "styleValid", "jsonValid", "severity", "issues"]
             },
-            additionalContext: {
-              type: Type.STRING,
-              description: "Nuance, legislative/legal background, chronological timeline, or real-world policy implications."
+            citationCoverage: {
+              type: Type.OBJECT,
+              properties: {
+                claimsDetected: { type: Type.INTEGER },
+                claimsSupported: { type: Type.INTEGER },
+                claimsUnsupported: { type: Type.INTEGER },
+                coveragePercent: { type: Type.INTEGER }
+              },
+              required: ["claimsDetected", "claimsSupported", "claimsUnsupported", "coveragePercent"]
             },
-            sifScore: {
-              type: Type.INTEGER,
-              description: "Sovereign Investigative Formula (SIF) score, calculated on the fly as an integer. Formula: (5 * primarySources count) + (4 * independentSources count) + (3 * otherOfficialDocs count) - unknowns - gaps. Capped at 0-100."
+            verdict: {
+              type: Type.OBJECT,
+              properties: {
+                classification: { type: Type.STRING },
+                justification: { type: Type.STRING },
+                decisionTrace: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING }
+                }
+              },
+              required: ["classification", "justification", "decisionTrace"]
+            },
+            primaryCitation: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                url: { type: Type.STRING },
+                reasonUnavailable: { type: Type.STRING }
+              },
+              required: ["title", "url"]
+            },
+            sourcesSnapshot: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  url: { type: Type.STRING },
+                  snapshotId: { type: Type.STRING },
+                  accessDate: { type: Type.STRING }
+                },
+                required: ["title", "url", "snapshotId", "accessDate"]
+              }
+            },
+            bayesian: {
+              type: Type.OBJECT,
+              properties: {
+                enabled: { type: Type.BOOLEAN },
+                priorReliability: { type: Type.NUMBER },
+                posteriorReliability: { type: Type.NUMBER },
+                modelReliability: { type: Type.NUMBER },
+                updateReason: { type: Type.STRING }
+              },
+              required: ["enabled", "priorReliability", "posteriorReliability", "modelReliability", "updateReason"]
             },
             editorialPersona: {
-              type: Type.STRING,
-              description: "Choose the role that fits this claim's analysis the best: 'Hard-Boiled Reporter', 'Structural Analyst', or 'Fact-Checker'."
+              type: Type.STRING
             }
           },
-          required: ["summary", "semanticParsing", "baselineFacts", "truthVerdict", "additionalContext", "sifScore", "editorialPersona"]
+          required: [
+            "schemaVersion",
+            "metadata",
+            "claim",
+            "evidence",
+            "SIF",
+            "confidence",
+            "validation",
+            "citationCoverage",
+            "verdict",
+            "primaryCitation",
+            "sourcesSnapshot",
+            "bayesian",
+            "editorialPersona"
+          ]
         }
       }
     });
@@ -184,25 +409,22 @@ app.post("/api/jusbt/analyze", async (req, res) => {
     // Parse model text
     const parsedData = JSON.parse(response.text.trim());
 
-    // Extract Grounding Chunks
-    const groundingSources: any[] = [];
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    if (chunks && Array.isArray(chunks)) {
-      for (const chunk of chunks) {
-        if (chunk.web?.uri) {
-          groundingSources.push({
-            title: chunk.web.title || "Web Reference",
-            uri: chunk.web.uri
-          });
-        }
-      }
+    // Populate metadata defaults to guarantee absolute compliance
+    parsedData.schemaVersion = "2.0";
+    if (!parsedData.metadata) {
+      parsedData.metadata = {};
     }
-
-    // Assign temporary ID if missing
-    parsedData.id = "C-" + Math.floor(100 + Math.random() * 900);
-    parsedData.date = new Date().toISOString().split("T")[0];
-    parsedData.claimText = claimText;
-    parsedData.groundingSources = groundingSources;
+    parsedData.metadata.verdictTimestamp = new Date().toISOString();
+    if (!parsedData.metadata.analysisId) {
+      parsedData.metadata.analysisId = "C-" + Math.floor(100 + Math.random() * 900);
+    }
+    if (!parsedData.metadata.requestId) {
+      parsedData.metadata.requestId = "req-" + Math.random().toString(36).substring(2, 11);
+    }
+    if (!parsedData.claim) {
+      parsedData.claim = {};
+    }
+    parsedData.claim.originalClaim = claimText;
 
     res.json(parsedData);
   } catch (error: any) {

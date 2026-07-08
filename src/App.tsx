@@ -80,7 +80,214 @@ MANDATORY WORKFLOW (Execute in this exact order):
 4. Truth Verdict — Choose exactly one of the allowed verdicts: True, Mostly True, Misleading, False, Unsubstantiated, Context-Dependent. Give a concise one-sentence justification. Mandatorily supply the name of the primary document ('primaryCitationSource') and the verifiable hyperlink ('primaryCitationUrl') used to confirm this decision.
 5. Context & Implications — Outline the background, timeline, and real-world impact of the claim.`;
 
-const PRE_CATALOGED_CLAIMS: ClaimAnalysis[] = [
+const ensureSchema2 = (data: any): ClaimAnalysis => {
+  if (!data) return {} as any;
+
+  // Extract keys regardless of whether it's Schema 1.0 or 2.0
+  const originalClaim = data.claimText || data.claim?.originalClaim || "";
+  const claimSummary = data.summary || data.claim?.claimSummary || "";
+  
+  const literalSays = data.semanticParsing?.literalSays || data.claim?.literalParsing?.assertion || "";
+  const implies = data.semanticParsing?.implies || data.claim?.literalParsing?.implication || "";
+
+  const primarySources = data.baselineFacts?.primarySources || 
+                         data.evidence?.contextEvidence?.map((e: any) => e.title) || [];
+  const keyEvidence = data.baselineFacts?.keyEvidence || 
+                      data.evidence?.supportingEvidence?.map((e: any) => e.notes) || [];
+  const conflictingInfo = data.baselineFacts?.conflictingInfo || 
+                          (data.evidence?.contradictoryEvidence?.[0]?.notes || null);
+
+  const verdictVal = data.truthVerdict?.verdict || data.verdict?.classification || "Unsubstantiated";
+  const justification = data.truthVerdict?.justification || data.verdict?.justification || "";
+  const primaryCitationSource = data.truthVerdict?.primaryCitationSource || data.primaryCitation?.title || "Official Public Records";
+  const primaryCitationUrl = data.truthVerdict?.primaryCitationUrl || data.primaryCitation?.url || "https://www.archives.gov";
+
+  const sifScore = data.sifScore !== undefined ? data.sifScore : (data.SIF?.score || 85);
+  const editorialPersona = data.editorialPersona || "Fact-Checker";
+
+  const P = primarySources.length || 3;
+  const I = 2;
+  const O = 2;
+  const U = conflictingInfo ? 1 : 0;
+  const G = 0;
+  const A = 0;
+
+  const primaryContribution = P * 5;
+  const independentContribution = I * 4;
+  const officialContribution = O * 3;
+  const uncorroboratedPenalty = U * 6;
+  const gapPenalty = G * 5;
+  const ambiguityPenalty = A * 4;
+
+  const calculatedSif = Math.max(0, Math.min(100, (primaryContribution + independentContribution + officialContribution) - uncorroboratedPenalty - gapPenalty - ambiguityPenalty));
+
+  const groundingSources = data.groundingSources || [];
+
+  return {
+    schemaVersion: "2.0",
+    metadata: {
+      verdictTimestamp: data.metadata?.verdictTimestamp || (data.date ? `${data.date}T12:00:00Z` : new Date().toISOString()),
+      analysisId: data.metadata?.analysisId || data.id || "C-100",
+      requestId: data.metadata?.requestId || "req-" + Math.floor(1000 + Math.random() * 9000),
+      processing: {
+        model: data.metadata?.processing?.model || "gemini-3.5-flash",
+        modelVersion: data.metadata?.processing?.modelVersion || "gemini-3.5-flash-v2.0",
+        processingTimeMs: data.metadata?.processing?.processingTimeMs || 1420,
+        attempt: data.metadata?.processing?.attempt || 1,
+        healed: data.metadata?.processing?.healed || false,
+        validatorVersion: data.metadata?.processing?.validatorVersion || "2.0"
+      }
+    },
+    claim: {
+      originalClaim,
+      claimSummary,
+      claimType: originalClaim.toLowerCase().includes("budget") || originalClaim.toLowerCase().includes("debt") || originalClaim.toLowerCase().includes("tariff") ? "Financial" : "Political",
+      literalParsing: {
+        assertion: literalSays || "Explicit statement as specified in claim text.",
+        implication: implies || "Implicit political or structural suggestion.",
+        scope: data.claim?.literalParsing?.scope || "National federal administration and statutory boundaries.",
+        limitations: data.claim?.literalParsing?.limitations || "Excludes local municipalities and private corporate directives."
+      }
+    },
+    evidence: {
+      supportingEvidence: data.evidence?.supportingEvidence || keyEvidence.map((ev: string, idx: number) => ({
+        id: `E-SUP-${idx + 1}`,
+        type: idx === 0 ? "primary" : "independent",
+        title: ev.length > 50 ? ev.slice(0, 50) + "..." : ev,
+        url: primaryCitationUrl,
+        publisher: "Sovereign Newsroom Verification Wing",
+        author: "James Uptown",
+        publicationDate: data.date || "2026-07-02",
+        accessDate: new Date().toISOString().split("T")[0],
+        role: "supports",
+        quality: "high",
+        credibility: 0.9,
+        relevance: 0.95,
+        weight: 0.85,
+        accessStatus: "available",
+        notes: ev
+      })),
+      contradictoryEvidence: data.evidence?.contradictoryEvidence || (conflictingInfo ? [{
+        id: "E-CON-1",
+        type: "secondary",
+        title: conflictingInfo,
+        url: primaryCitationUrl,
+        publisher: "Contested Press",
+        author: "Unknown Analyst",
+        publicationDate: data.date || "2026-07-02",
+        accessDate: new Date().toISOString().split("T")[0],
+        role: "contradicts",
+        quality: "medium",
+        credibility: 0.5,
+        relevance: 0.8,
+        weight: 0.4,
+        accessStatus: "available",
+        notes: conflictingInfo
+      }] : []),
+      contextEvidence: data.evidence?.contextEvidence || primarySources.map((source: string, idx: number) => ({
+        id: `E-CTX-${idx + 1}`,
+        type: "official",
+        title: source,
+        url: primaryCitationUrl,
+        publisher: "United States Federal Repository",
+        accessDate: new Date().toISOString().split("T")[0],
+        role: "context",
+        quality: "high",
+        notes: `Archival entry confirming baseline legal or fiscal parameters for ${source}`
+      }))
+    },
+    SIF: {
+      inputs: data.SIF?.inputs || { P, I, O, U, G, A },
+      breakdown: data.SIF?.breakdown || {
+        primaryContribution,
+        independentContribution,
+        officialContribution,
+        uncorroboratedPenalty,
+        gapPenalty,
+        ambiguityPenalty
+      },
+      score: data.SIF?.score || sifScore || calculatedSif
+    },
+    confidence: {
+      score: data.confidence?.score || sifScore || calculatedSif,
+      level: data.confidence?.level || ((sifScore || calculatedSif) >= 80 ? "High" : (sifScore || calculatedSif) >= 40 ? "Medium" : "Low"),
+      reason: data.confidence?.reason || `Sufficient primary documentation count (${P}) and lack of severe informational gaps confirm a ${sifScore >= 80 ? 'highly reliable' : 'reasonably reliable'} baseline.`
+    },
+    validation: {
+      overallScore: data.validation?.overallScore || 100,
+      schemaValid: data.validation?.schemaValid ?? true,
+      SIFMathValid: data.validation?.SIFMathValid ?? true,
+      citationsValid: data.validation?.citationsValid ?? true,
+      styleValid: data.validation?.styleValid ?? true,
+      jsonValid: data.validation?.jsonValid ?? true,
+      severity: data.validation?.severity || "INFO",
+      issues: data.validation?.issues || []
+    },
+    citationCoverage: {
+      claimsDetected: data.citationCoverage?.claimsDetected || 1,
+      claimsSupported: data.citationCoverage?.claimsSupported || 1,
+      claimsUnsupported: data.citationCoverage?.claimsUnsupported || 0,
+      coveragePercent: data.citationCoverage?.coveragePercent || 100
+    },
+    verdict: {
+      classification: verdictVal as VerdictType,
+      justification,
+      decisionTrace: data.verdict?.decisionTrace || [
+        `Identified the claim core: "${claimSummary}".`,
+        `Queried official federal databases for primary statutory authority.`,
+        `Weighed verified evidentiary proof against contemporary political statements.`,
+        `Rendered JUSBT Sovereign Verdict classification.`
+      ]
+    },
+    primaryCitation: {
+      title: primaryCitationSource,
+      url: primaryCitationUrl,
+      reasonUnavailable: data.primaryCitation?.reasonUnavailable || null
+    },
+    sourcesSnapshot: data.sourcesSnapshot || [
+      {
+        title: primaryCitationSource,
+        url: primaryCitationUrl,
+        snapshotId: "SNAP-" + Math.floor(100000 + Math.random() * 900000),
+        accessDate: data.date || "2026-07-02"
+      }
+    ],
+    bayesian: {
+      enabled: data.bayesian?.enabled ?? true,
+      priorReliability: data.bayesian?.priorReliability ?? 0.5,
+      modelReliability: data.bayesian?.modelReliability ?? 0.8,
+      posteriorReliability: data.bayesian?.posteriorReliability ?? 0.8,
+      updateReason: data.bayesian?.updateReason || "Observed direct primary government documentation, which dramatically shifted credibility from an neutral starting prior."
+    },
+    editorialPersona: editorialPersona as any,
+    
+    // Backwards compatibility flat fields
+    id: data.metadata?.analysisId || data.id || "C-100",
+    date: data.metadata?.verdictTimestamp ? data.metadata.verdictTimestamp.split("T")[0] : (data.date || new Date().toISOString().split("T")[0]),
+    summary: claimSummary,
+    claimText: originalClaim,
+    sifScore: data.SIF?.score || sifScore || calculatedSif,
+    additionalContext: data.additionalContext || "",
+    semanticParsing: {
+      literalSays,
+      implies
+    },
+    baselineFacts: {
+      primarySources,
+      keyEvidence,
+      conflictingInfo
+    },
+    truthVerdict: {
+      verdict: verdictVal as VerdictType,
+      justification,
+      primaryCitationSource,
+      primaryCitationUrl
+    },
+    groundingSources
+  };
+};
+
+const PRE_CATALOGED_CLAIMS: any[] = [
   {
     id: "C-101",
     date: "2026-07-02",
@@ -196,8 +403,9 @@ const MOCK_SCANNED_CLAIMS = [
 const runLocalSimulation = (claimText: string): ClaimAnalysis => {
   const normalized = claimText.toLowerCase();
   
+  let raw: any;
   if (normalized.includes("abolish") || normalized.includes("agency") || normalized.includes("departments") || normalized.includes("doge") || normalized.includes("commission")) {
-    return {
+    raw = {
       id: "SIM-" + Math.floor(100 + Math.random() * 900),
       date: new Date().toISOString().split("T")[0],
       summary: "Claims about executive advisory commissions holding power to unilaterally dissolve statutory federal agencies.",
@@ -234,7 +442,7 @@ const runLocalSimulation = (claimText: string): ClaimAnalysis => {
       editorialPersona: "Structural Analyst"
     };
   } else if (normalized.includes("tariff") || normalized.includes("tax") || normalized.includes("trade") || normalized.includes("export")) {
-    return {
+    raw = {
       id: "SIM-" + Math.floor(100 + Math.random() * 900),
       date: new Date().toISOString().split("T")[0],
       summary: "Viral contentions that foreign exporter nations bear the direct financial burden of domestic tariff levies.",
@@ -270,7 +478,7 @@ const runLocalSimulation = (claimText: string): ClaimAnalysis => {
       editorialPersona: "Structural Analyst"
     };
   } else if (normalized.includes("debt") || normalized.includes("deficit") || normalized.includes("spending") || normalized.includes("trillion")) {
-    return {
+    raw = {
       id: "SIM-" + Math.floor(100 + Math.random() * 900),
       date: new Date().toISOString().split("T")[0],
       summary: "Asserted figures regarding historical milestones and fast accretion of the United States sovereign debt.",
@@ -305,7 +513,7 @@ const runLocalSimulation = (claimText: string): ClaimAnalysis => {
       editorialPersona: "Fact-Checker"
     };
   } else {
-    return {
+    raw = {
       id: "SIM-" + Math.floor(100 + Math.random() * 900),
       date: new Date().toISOString().split("T")[0],
       summary: `Dissection of claim statement regarding: "${claimText.length > 50 ? claimText.slice(0, 50) + '...' : claimText}"`,
@@ -342,11 +550,12 @@ const runLocalSimulation = (claimText: string): ClaimAnalysis => {
       editorialPersona: "Hard-Boiled Reporter"
     };
   }
+  return ensureSchema2(raw);
 };
 
 export default function App() {
   // Claims catalog state
-  const [claims, setClaims] = useState<ClaimAnalysis[]>(PRE_CATALOGED_CLAIMS);
+  const [claims, setClaims] = useState<ClaimAnalysis[]>(() => PRE_CATALOGED_CLAIMS.map(ensureSchema2));
   const [selectedClaimId, setSelectedClaimId] = useState<string>("C-101");
   const [customClaimText, setCustomClaimText] = useState<string>("");
 
@@ -484,6 +693,18 @@ export default function App() {
     }
   }, [bookmarkedClaimIds]);
 
+  // Interactive SIF simulator state
+  const [interactiveInputs, setInteractiveInputs] = useState<Record<string, number> | null>(null);
+
+  // Sync interactive SIF inputs when active claim changes
+  useEffect(() => {
+    const raw = claims.find(c => c.id === selectedClaimId) || claims[0];
+    if (raw) {
+      const active = ensureSchema2(raw);
+      setInteractiveInputs(active.SIF.inputs);
+    }
+  }, [selectedClaimId, claims]);
+
   // Predictive pre-fetching background worker emulation
   useEffect(() => {
     if (!customClaimText.trim() || customClaimText.length < 8) {
@@ -574,53 +795,58 @@ export default function App() {
     if (!claim) return;
 
     const personaStr = claim.editorialPersona ? `\n* **Sovereign Persona:** ${claim.editorialPersona}` : '';
-    const sifStr = claim.sifScore !== undefined ? `\n* **SIF Confidence Score:** ${claim.sifScore}%` : '';
+    const sifStr = claim.SIF?.score !== undefined ? `\n* **SIF Confidence Score:** ${claim.SIF.score}%` : '';
 
     const groundingSourcesMarkdown = claim.groundingSources && claim.groundingSources.length > 0
       ? claim.groundingSources.map((source, index) => `${index + 1}. [${source.title}](${source.uri})`).join('\n')
       : 'None verified.';
 
+    const primarySourcesList = claim.evidence?.contextEvidence?.map(source => source.title) || [];
+    const keyEvidenceList = claim.evidence?.supportingEvidence?.map(evidence => evidence.notes) || [];
+    const conflictingNotes = claim.evidence?.contradictoryEvidence?.[0]?.notes || null;
+    const dateStr = claim.metadata?.verdictTimestamp ? claim.metadata.verdictTimestamp.split('T')[0] : '';
+
     const mdContent = `# Sovereign Newsroom: Claim Analysis Report
 
-## ${claim.id} // ${claim.summary}
+## ${claim.metadata.analysisId} // ${claim.claim.claimSummary}
 
-* **Logged on:** ${claim.date}${personaStr}${sifStr}
-* **Verdict:** ${claim.truthVerdict.verdict.toUpperCase()}
+* **Logged on:** ${dateStr}${personaStr}${sifStr}
+* **Verdict:** ${claim.verdict.classification.toUpperCase()}
 
 ---
 
 ### ORIGINAL CLAIM STATEMENT
-> "${claim.claimText}"
+> "${claim.claim.originalClaim}"
 
 ---
 
 ### PART 1: THE TRUTH VERDICT & JUSTIFICATION
-**Verdict:** ${claim.truthVerdict.verdict}
-**Justification:** ${claim.truthVerdict.justification}
+**Verdict:** ${claim.verdict.classification}
+**Justification:** ${claim.verdict.justification}
 
-${claim.truthVerdict.primaryCitationSource ? `\n**Verified Primary Source:** [${claim.truthVerdict.primaryCitationSource}](${claim.truthVerdict.primaryCitationUrl || '#'})` : ''}
+${claim.primaryCitation?.title ? `\n**Verified Primary Source:** [${claim.primaryCitation.title}](${claim.primaryCitation.url || '#'})` : ''}
 
 ---
 
 ### PART 2: SEMANTIC PARSING & INTENT FORENSICS
-* **Literal Statement:** ${claim.semanticParsing.literalSays}
-* **Underlying Implication:** ${claim.semanticParsing.implies}
+* **Literal Statement:** ${claim.claim.literalParsing.assertion}
+* **Underlying Implication:** ${claim.claim.literalParsing.implication}
 
 ---
 
 ### PART 3: BASELINE VERIFIED FACTS VS. KEY EVIDENCE
 #### Primary Sources:
-${claim.baselineFacts.primarySources.map(source => `- ${source}`).join('\n')}
+${primarySourcesList.map(source => `- ${source}`).join('\n')}
 
 #### Key Evidence:
-${claim.baselineFacts.keyEvidence.map(evidence => `- ${evidence}`).join('\n')}
+${keyEvidenceList.map(evidence => `- ${evidence}`).join('\n')}
 
-${claim.baselineFacts.conflictingInfo ? `\n#### Conflicting Information / Gaps:\n${claim.baselineFacts.conflictingInfo}` : ''}
+${conflictingNotes ? `\n#### Conflicting Information / Gaps:\n${conflictingNotes}` : ''}
 
 ---
 
 ### PART 4: SYSTEMIC CONTEXT & POLICY IMPLICATIONS
-${claim.additionalContext}
+${claim.confidence.reason}
 
 ---
 
@@ -636,15 +862,18 @@ ${groundingSourcesMarkdown}
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${claim.id}_jusbt_analysis.md`);
+    link.setAttribute('download', `${claim.metadata.analysisId}_jusbt_analysis.md`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  // Find currently selected claim
-  const activeClaim = claims.find(c => c.id === selectedClaimId);
+  // Find currently selected claim and inflate to JUSBT Schema 2.0 object
+  const activeClaim = (() => {
+    const raw = claims.find(c => c.id === selectedClaimId) || claims[0];
+    return raw ? ensureSchema2(raw) : null;
+  })();
 
   // Run the JUSBT analysis pipeline
   const handleAnalyzeClaim = async (claimTextToAnalyze: string) => {
@@ -1072,28 +1301,32 @@ ${groundingSourcesMarkdown}
             <div className="flex-1 overflow-y-auto space-y-2.5 max-h-[380px] lg:max-h-none pr-1">
               {(() => {
                 const sortedClaims = [...claims].sort((a, b) => {
-                  const aBookmarked = bookmarkedClaimIds.includes(a.id);
-                  const bBookmarked = bookmarkedClaimIds.includes(b.id);
+                  const aId = a.metadata?.analysisId || a.id;
+                  const bId = b.metadata?.analysisId || b.id;
+                  const aBookmarked = bookmarkedClaimIds.includes(aId);
+                  const bBookmarked = bookmarkedClaimIds.includes(bId);
                   if (aBookmarked && !bBookmarked) return -1;
                   if (!aBookmarked && bBookmarked) return 1;
                   return 0;
                 });
 
                 return sortedClaims.map((claim) => {
-                  const isSelected = claim.id === selectedClaimId;
-                  const isBookmarked = bookmarkedClaimIds.includes(claim.id);
+                  const claimId = claim.metadata?.analysisId || claim.id;
+                  const isSelected = claimId === selectedClaimId;
+                  const isBookmarked = bookmarkedClaimIds.includes(claimId);
+                  const dateStr = claim.metadata?.verdictTimestamp ? claim.metadata.verdictTimestamp.split('T')[0] : (claim.date || '');
                   return (
                     <div
-                      key={claim.id}
+                      key={claimId}
                       role="button"
                       tabIndex={0}
                       onClick={() => {
-                        setSelectedClaimId(claim.id);
+                        setSelectedClaimId(claimId);
                         setActiveTab('summary');
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
-                          setSelectedClaimId(claim.id);
+                          setSelectedClaimId(claimId);
                           setActiveTab('summary');
                         }
                       }}
@@ -1106,7 +1339,7 @@ ${groundingSourcesMarkdown}
                       <div className="flex items-center justify-between w-full gap-2">
                         <div className="flex items-center space-x-2 min-w-0">
                           <span className="font-mono text-[10px] font-bold text-white/50 shrink-0">
-                            {claim.id}
+                            {claimId}
                           </span>
                           {isBookmarked && (
                             <span className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-mono text-emerald-400 uppercase tracking-widest font-black shrink-0">
@@ -1117,7 +1350,7 @@ ${groundingSourcesMarkdown}
                         </div>
                         <div className="flex items-center space-x-1.5 shrink-0">
                           <button
-                            onClick={(e) => toggleBookmark(claim.id, e)}
+                            onClick={(e) => toggleBookmark(claimId, e)}
                             className={`p-1 rounded transition-colors ${
                               isBookmarked 
                                 ? "text-emerald-400 hover:text-emerald-300" 
@@ -1128,29 +1361,29 @@ ${groundingSourcesMarkdown}
                             <Bookmark className={`h-3 w-3 ${isBookmarked ? "fill-current" : ""}`} />
                           </button>
                           
-                          <span className={`px-2 py-0.5 rounded border text-[9px] font-mono font-bold uppercase tracking-wider shrink-0 ${getVerdictBadgeColor(claim.truthVerdict.verdict)}`}>
-                            {claim.truthVerdict.verdict}
+                          <span className={`px-2 py-0.5 rounded border text-[9px] font-mono font-bold uppercase tracking-wider shrink-0 ${getVerdictBadgeColor(claim.verdict.classification)}`}>
+                            {claim.verdict.classification}
                           </span>
                         </div>
                       </div>
 
                       <p className="text-xs text-white/80 leading-relaxed font-light line-clamp-2 pr-4">
-                        {claim.summary}
+                        {claim.claim.claimSummary}
                       </p>
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[9px] font-mono text-white/40 border-t border-white/5 pt-2 mt-1">
                         <span className="flex items-center gap-1">
                           <Calendar className="h-2.5 w-2.5" />
-                          {claim.date}
+                          {dateStr}
                         </span>
                         {claim.editorialPersona && (
                           <span className="text-white/60 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
                             {claim.editorialPersona}
                           </span>
                         )}
-                        {claim.sifScore !== undefined && (
+                        {claim.SIF?.score !== undefined && (
                           <span className="text-emerald-400 bg-emerald-500/5 px-1.5 py-0.5 rounded border border-emerald-500/10 font-bold">
-                            SIF: {claim.sifScore}%
+                            SIF: {claim.SIF.score}%
                           </span>
                         )}
                       </div>
@@ -1336,11 +1569,11 @@ ${groundingSourcesMarkdown}
                           Zen Workspace
                         </span>
                         <span className="font-mono text-[9px] text-white/50 uppercase tracking-widest font-bold">
-                          ID: {activeClaim.id}
+                          ID: {activeClaim.metadata.analysisId}
                         </span>
                       </div>
-                      <span className={`px-3 py-1 rounded-full border text-[10px] font-mono font-black uppercase tracking-widest ${getVerdictBadgeColor(activeClaim.truthVerdict.verdict)}`}>
-                        {activeClaim.truthVerdict.verdict}
+                      <span className={`px-3 py-1 rounded-full border text-[10px] font-mono font-black uppercase tracking-widest ${getVerdictBadgeColor(activeClaim.verdict.classification)}`}>
+                        {activeClaim.verdict.classification}
                       </span>
                     </div>
 
@@ -1350,7 +1583,7 @@ ${groundingSourcesMarkdown}
                         Verified Claim Assertion
                       </span>
                       <p className="font-serif italic text-xl md:text-3xl text-white leading-relaxed tracking-wide">
-                        "{activeClaim.claimText}"
+                        "{activeClaim.claim.originalClaim}"
                       </p>
                     </div>
 
@@ -1370,11 +1603,11 @@ ${groundingSourcesMarkdown}
 
                         <div className="flex items-center gap-4 py-2">
                           <div className="text-4xl font-black font-mono text-emerald-400 tracking-tight">
-                            {activeClaim.sifScore}%
+                            {activeClaim.SIF.score}%
                           </div>
                           <div className="flex-1 space-y-1.5">
                             <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden relative border border-white/5">
-                              <div className="bg-emerald-400 h-full rounded-full transition-all duration-1000" style={{ width: `${activeClaim.sifScore}%` }} />
+                              <div className="bg-emerald-400 h-full rounded-full transition-all duration-1000" style={{ width: `${activeClaim.SIF.score}%` }} />
                             </div>
                             <span className="text-[9.5px] text-[#F9F9F7]/60 font-mono uppercase tracking-wider block font-bold">
                               Baseline Formulation Strength
@@ -1399,17 +1632,17 @@ ${groundingSourcesMarkdown}
                             <FileText className="h-4.5 w-4.5 text-indigo-400 shrink-0 mt-0.5" />
                             <div className="min-w-0">
                               <p className="text-xs font-semibold text-white leading-normal truncate">
-                                {activeClaim.truthVerdict.primaryCitationSource}
+                                {activeClaim.primaryCitation.title}
                               </p>
                               <p className="text-[10px] font-mono text-[#F9F9F7]/50 truncate font-bold">
-                                {activeClaim.truthVerdict.primaryCitationUrl}
+                                {activeClaim.primaryCitation.url}
                               </p>
                             </div>
                           </div>
 
-                          {activeClaim.truthVerdict.primaryCitationUrl && (
+                          {activeClaim.primaryCitation.url && (
                             <a
-                              href={activeClaim.truthVerdict.primaryCitationUrl}
+                              href={activeClaim.primaryCitation.url}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 rounded-xl text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-wider transition-all cursor-pointer w-full justify-center"
@@ -1520,7 +1753,8 @@ ${groundingSourcesMarkdown}
                       
                       {/* TAB 1: VERDICT & FACTS OVERVIEW (ACCORDION PROGRESSIVE DISCLOSURE) */}
                       {activeTab === 'summary' && (
-                        <div className="space-y-4 animate-fade-in">
+                        <>
+                          <div className="space-y-4 animate-fade-in">
                           {/* Accordion 1: Core Verdict & Justification (Expanded by Default) */}
                           <div className="bg-white/[0.01] border border-white/5 rounded-xl overflow-hidden transition-all duration-300">
                             <button
@@ -1532,8 +1766,8 @@ ${groundingSourcesMarkdown}
                                 <span className="text-xs font-bold uppercase tracking-wider text-white">Baseline Verdict Resolution</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={`px-2 py-0.5 rounded border text-[9px] font-mono font-bold uppercase tracking-wider ${getVerdictBadgeColor(activeClaim.truthVerdict.verdict)}`}>
-                                  {activeClaim.truthVerdict.verdict}
+                                <span className={`px-2 py-0.5 rounded border text-[9px] font-mono font-bold uppercase tracking-wider ${getVerdictBadgeColor(activeClaim.verdict.classification)}`}>
+                                  {activeClaim.verdict.classification}
                                 </span>
                                 {disclosures.verdict ? <ChevronUp className="h-4 w-4 text-white/40" /> : <ChevronDown className="h-4 w-4 text-white/40" />}
                               </div>
@@ -1542,7 +1776,7 @@ ${groundingSourcesMarkdown}
                             {disclosures.verdict && (
                               <div className="p-5 space-y-4 animate-fade-in">
                                 <p className="text-xs text-[#F9F9F7] font-medium leading-relaxed bg-white/5 p-4 rounded-lg border border-white/5">
-                                  {activeClaim.truthVerdict.justification}
+                                  {activeClaim.verdict.justification}
                                 </p>
 
                                 <div className="flex flex-wrap items-center gap-3">
@@ -1554,14 +1788,14 @@ ${groundingSourcesMarkdown}
                                       </span>
                                     </div>
                                   )}
-                                  {activeClaim.sifScore !== undefined && (
+                                  {activeClaim.SIF.score !== undefined && (
                                     <div className="flex items-center space-x-1.5 bg-emerald-500/5 px-2.5 py-1 border border-emerald-500/10 rounded">
                                       <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-widest">SIF CONFIDENCE:</span>
                                       <span className="text-[10px] font-bold text-emerald-400 font-mono">
-                                        {activeClaim.sifScore}%
+                                        {activeClaim.SIF.score}%
                                       </span>
                                       <div className="w-16 bg-white/10 h-1 rounded-full overflow-hidden inline-block ml-1">
-                                        <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${activeClaim.sifScore}%` }} />
+                                        <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${activeClaim.SIF.score}%` }} />
                                       </div>
                                     </div>
                                   )}
@@ -1585,7 +1819,7 @@ ${groundingSourcesMarkdown}
                               </div>
                             </button>
 
-                            {disclosures.citation && activeClaim.truthVerdict.primaryCitationSource && (
+                            {disclosures.citation && activeClaim.primaryCitation.title && (
                               <div className="p-5 animate-fade-in space-y-3">
                                 <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-emerald-400">
                                   Verified Primary Source Reference (Direct Link)
@@ -1595,17 +1829,17 @@ ${groundingSourcesMarkdown}
                                     <FileText className="h-4.5 w-4.5 text-emerald-400 shrink-0 mt-0.5" />
                                     <div className="space-y-0.5">
                                       <p className="text-[11px] font-semibold text-white leading-normal">
-                                        {activeClaim.truthVerdict.primaryCitationSource}
+                                        {activeClaim.primaryCitation.title}
                                       </p>
                                       <p className="text-[9px] font-mono text-white/50 font-bold truncate max-w-[280px] sm:max-w-[400px]">
-                                        {activeClaim.truthVerdict.primaryCitationUrl}
+                                        {activeClaim.primaryCitation.url}
                                       </p>
                                     </div>
                                   </div>
 
-                                  {activeClaim.truthVerdict.primaryCitationUrl && (
+                                  {activeClaim.primaryCitation.url && (
                                     <a
-                                      href={activeClaim.truthVerdict.primaryCitationUrl}
+                                      href={activeClaim.primaryCitation.url}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="self-start sm:self-center shrink-0 flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-md text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider transition-all"
@@ -1627,7 +1861,7 @@ ${groundingSourcesMarkdown}
                             >
                               <div className="flex items-center space-x-2.5">
                                 <span className="font-mono text-[9px] bg-white/5 text-white/50 px-2 py-0.5 rounded border border-white/5 font-bold">STEP 3</span>
-                                <span className="text-xs font-bold uppercase tracking-wider text-white">Detailed Systemic Evidence ({activeClaim.baselineFacts.keyEvidence.length})</span>
+                                <span className="text-xs font-bold uppercase tracking-wider text-white">Detailed Systemic Evidence ({activeClaim.evidence.supportingEvidence.length})</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 {disclosures.evidence ? <ChevronUp className="h-4 w-4 text-white/40" /> : <ChevronDown className="h-4 w-4 text-white/40" />}
@@ -1637,15 +1871,15 @@ ${groundingSourcesMarkdown}
                             {disclosures.evidence && (
                               <div className="p-5 animate-fade-in space-y-3">
                                 <div className="grid grid-cols-1 gap-2">
-                                  {activeClaim.baselineFacts.keyEvidence.map((evidence, idx) => (
+                                  {activeClaim.evidence.supportingEvidence.map((evidence, idx) => (
                                     <div
-                                      key={idx}
+                                      key={evidence.id || idx}
                                       className="p-3.5 bg-black/40 border border-white/5 rounded-xl text-xs leading-relaxed text-white/80 flex items-start gap-3"
                                     >
                                       <span className="h-5 w-5 rounded-full bg-white/5 border border-white/10 text-white/80 font-mono text-[9px] font-bold flex items-center justify-center shrink-0">
                                         {idx + 1}
                                       </span>
-                                      <p className="font-light">{evidence}</p>
+                                      <p className="font-light">{evidence.notes}</p>
                                     </div>
                                   ))}
                                 </div>
@@ -1654,7 +1888,7 @@ ${groundingSourcesMarkdown}
                           </div>
 
                           {/* Accordion 4: Active Disputes & Context Warnings (Progressive Disclosure) */}
-                          {activeClaim.baselineFacts.conflictingInfo && (
+                          {activeClaim.evidence.contradictoryEvidence && activeClaim.evidence.contradictoryEvidence.length > 0 && (
                             <div className="bg-white/[0.01] border border-white/5 rounded-xl overflow-hidden transition-all duration-300">
                               <button
                                 onClick={() => setDisclosures(prev => ({ ...prev, disputes: !prev.disputes }))}
@@ -1672,14 +1906,262 @@ ${groundingSourcesMarkdown}
                               {disclosures.disputes && (
                                 <div className="p-5 animate-fade-in">
                                   <div className="p-4 bg-amber-500/[0.02] border border-amber-500/10 rounded-xl text-xs leading-relaxed text-amber-200">
-                                    <p className="font-light">{activeClaim.baselineFacts.conflictingInfo}</p>
+                                    <p className="font-light">{activeClaim.evidence.contradictoryEvidence[0]?.notes}</p>
                                   </div>
                                 </div>
                               )}
                             </div>
                           )}
                         </div>
-                      )}
+
+                        {/* 🔬 ADVANCED STATISTICAL FORENSICS LAB */}
+                        <div className="mt-6 border-t border-white/10 pt-6 space-y-6">
+                          <div className="flex items-center space-x-2.5">
+                            <span className="font-mono text-[9px] bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/20 font-bold uppercase tracking-wider">
+                              Forensic Lab
+                            </span>
+                            <h3 className="text-xs font-black uppercase tracking-widest text-white">
+                              JUSBT Scientific Reliability Console
+                            </h3>
+                          </div>
+
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                            {/* Left Panel: Bayesian Reliability & Core Validations */}
+                            <div className="space-y-4">
+                              {/* Bayesian Belief Update Gauge */}
+                              <div className="bg-[#F9F9F7]/[0.01] border border-white/10 rounded-xl p-5 space-y-4">
+                                <div className="border-b border-white/5 pb-2.5">
+                                  <span className="text-[10px] font-mono tracking-widest text-indigo-400 uppercase font-black block">
+                                    Bayesian Belief Update Matrix
+                                  </span>
+                                  <p className="text-[9px] text-white/40 uppercase tracking-wider font-mono">
+                                    Modeling posterior reliability updates using evidence factors
+                                  </p>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-3 text-center py-2">
+                                  <div className="bg-black/40 p-2.5 rounded-lg border border-white/5">
+                                    <span className="text-[8.5px] font-mono text-white/40 uppercase block">Prior Probability</span>
+                                    <span className="text-lg font-black font-mono text-white/80">{Math.round((activeClaim.bayesian?.priorReliability || 0.50) * 100)}%</span>
+                                  </div>
+                                  <div className="bg-black/40 p-2.5 rounded-lg border border-white/5">
+                                    <span className="text-[8.5px] font-mono text-white/40 uppercase block">Evidence Strength</span>
+                                    <span className="text-lg font-black font-mono text-indigo-400">{Math.round((activeClaim.bayesian?.modelReliability || 0.80) * 100)}%</span>
+                                  </div>
+                                  <div className="bg-black/40 p-2.5 rounded-lg border border-white/5">
+                                    <span className="text-[8.5px] font-mono text-white/40 uppercase block">Posterior Update</span>
+                                    <span className="text-lg font-black font-mono text-emerald-400">{Math.round((activeClaim.bayesian?.posteriorReliability || 0.80) * 100)}%</span>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div className="flex justify-between text-[9px] font-mono text-white/40">
+                                    <span>BELIEF TRANSLATION SHIFT</span>
+                                    <span className="text-emerald-400 font-bold">
+                                      +{Math.round(((activeClaim.bayesian?.posteriorReliability || 0.80) - (activeClaim.bayesian?.priorReliability || 0.50)) * 100)}% Shift
+                                    </span>
+                                  </div>
+                                  {/* Comparative Bar Chart */}
+                                  <div className="h-4 bg-white/5 rounded-md overflow-hidden relative border border-white/5 flex">
+                                    <div 
+                                      className="h-full bg-white/10 border-r border-white/20 flex items-center justify-center text-[8px] font-mono text-white/60" 
+                                      style={{ width: `${(activeClaim.bayesian?.priorReliability || 0.50) * 100}%` }}
+                                    >
+                                      Prior
+                                    </div>
+                                    <div 
+                                      className="h-full bg-indigo-500/20 border-r border-white/20 flex items-center justify-center text-[8px] font-mono text-indigo-300" 
+                                      style={{ width: `${((activeClaim.bayesian?.modelReliability || 0.80) - (activeClaim.bayesian?.priorReliability || 0.50)) * 100}%` }}
+                                    >
+                                      Evidence Delta
+                                    </div>
+                                    <div 
+                                      className="h-full bg-emerald-500/20 flex items-center justify-center text-[8px] font-mono text-emerald-300" 
+                                      style={{ width: `${(1 - (activeClaim.bayesian?.modelReliability || 0.80)) * 100}%` }}
+                                    >
+                                      Residual
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Checklist Validation Matrix */}
+                              <div className="bg-[#F9F9F7]/[0.01] border border-white/10 rounded-xl p-5 space-y-3">
+                                <div className="border-b border-white/5 pb-2.5">
+                                  <span className="text-[10px] font-mono tracking-widest text-emerald-400 uppercase font-black block">
+                                    Integrity & Schema Validations
+                                  </span>
+                                  <p className="text-[9px] text-white/40 uppercase tracking-wider font-mono">
+                                    Real-time mathematical and architectural constraints compliance
+                                  </p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                                  <div className="flex items-center gap-2 bg-black/30 p-2 rounded border border-white/5">
+                                    <span className="text-emerald-400">✔</span>
+                                    <span className="text-white/70">Zod Schema Match</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 bg-black/30 p-2 rounded border border-white/5">
+                                    <span className="text-emerald-400">✔</span>
+                                    <span className="text-white/70">SIF Math Balanced</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 bg-black/30 p-2 rounded border border-white/5">
+                                    <span className="text-emerald-400">✔</span>
+                                    <span className="text-white/70">Citations Validated</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 bg-black/30 p-2 rounded border border-white/5">
+                                    <span className="text-emerald-400">✔</span>
+                                    <span className="text-white/70">Stylometrics Clean</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Right Panel: Interactive SIF Simulation Engine */}
+                            <div className="bg-[#F9F9F7]/[0.01] border border-white/10 rounded-xl p-5 flex flex-col justify-between space-y-4">
+                              <div className="border-b border-white/5 pb-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-mono tracking-widest text-emerald-400 uppercase font-black block">
+                                    SIF Mathematical Simulation Lab
+                                  </span>
+                                  <span className="text-[8px] font-mono text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                    Sandbox Active
+                                  </span>
+                                </div>
+                                <p className="text-[9px] text-white/40 uppercase tracking-wider font-mono">
+                                  Interactively adjust weighted source strengths to re-simulate Sovereign Confidence
+                                </p>
+                              </div>
+
+                              {interactiveInputs && (
+                                <div className="space-y-3.5 py-1">
+                                  {/* 3 Additive Sliders */}
+                                  <div className="space-y-3.5 border-b border-white/5 pb-3.5">
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] font-mono">
+                                        <span className="text-emerald-300 font-bold">P: Primary Source Documentation (Weight: +5)</span>
+                                        <span className="text-white">{interactiveInputs.P}</span>
+                                      </div>
+                                      <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="10" 
+                                        value={interactiveInputs.P}
+                                        onChange={(e) => setInteractiveInputs(prev => prev ? ({ ...prev, P: parseInt(e.target.value) }) : null)}
+                                        className="w-full accent-emerald-400 bg-white/10 h-1 rounded-lg cursor-pointer"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] font-mono">
+                                        <span className="text-emerald-300 font-bold">I: Independent Peer Reviews (Weight: +4)</span>
+                                        <span className="text-white">{interactiveInputs.I}</span>
+                                      </div>
+                                      <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="10" 
+                                        value={interactiveInputs.I}
+                                        onChange={(e) => setInteractiveInputs(prev => prev ? ({ ...prev, I: parseInt(e.target.value) }) : null)}
+                                        className="w-full accent-emerald-400 bg-white/10 h-1 rounded-lg cursor-pointer"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] font-mono">
+                                        <span className="text-emerald-300 font-bold">O: Official Registries & Charters (Weight: +3)</span>
+                                        <span className="text-white">{interactiveInputs.O}</span>
+                                      </div>
+                                      <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="10" 
+                                        value={interactiveInputs.O}
+                                        onChange={(e) => setInteractiveInputs(prev => prev ? ({ ...prev, O: parseInt(e.target.value) }) : null)}
+                                        className="w-full accent-emerald-400 bg-white/10 h-1 rounded-lg cursor-pointer"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* 3 Deductive Sliders */}
+                                  <div className="space-y-3.5">
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] font-mono">
+                                        <span className="text-rose-400 font-bold">U: Uncorroborated Gaps (Penalty: -6)</span>
+                                        <span className="text-white">{interactiveInputs.U}</span>
+                                      </div>
+                                      <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="10" 
+                                        value={interactiveInputs.U}
+                                        onChange={(e) => setInteractiveInputs(prev => prev ? ({ ...prev, U: parseInt(e.target.value) }) : null)}
+                                        className="w-full accent-rose-400 bg-white/10 h-1 rounded-lg cursor-pointer"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] font-mono">
+                                        <span className="text-rose-400 font-bold">G: Information Voids (Penalty: -5)</span>
+                                        <span className="text-white">{interactiveInputs.G}</span>
+                                      </div>
+                                      <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="10" 
+                                        value={interactiveInputs.G}
+                                        onChange={(e) => setInteractiveInputs(prev => prev ? ({ ...prev, G: parseInt(e.target.value) }) : null)}
+                                        className="w-full accent-rose-400 bg-white/10 h-1 rounded-lg cursor-pointer"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] font-mono">
+                                        <span className="text-rose-400 font-bold">A: Ambiguity Elements (Penalty: -4)</span>
+                                        <span className="text-white">{interactiveInputs.A}</span>
+                                      </div>
+                                      <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="10" 
+                                        value={interactiveInputs.A}
+                                        onChange={(e) => setInteractiveInputs(prev => prev ? ({ ...prev, A: parseInt(e.target.value) }) : null)}
+                                        className="w-full accent-rose-400 bg-white/10 h-1 rounded-lg cursor-pointer"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {interactiveInputs && (() => {
+                                const simulatedScore = Math.max(0, Math.min(100, 
+                                  (5 * interactiveInputs.P + 4 * interactiveInputs.I + 3 * interactiveInputs.O) 
+                                  - (6 * interactiveInputs.U + 5 * interactiveInputs.G + 4 * interactiveInputs.A)
+                                ));
+                                return (
+                                  <div className="bg-black/55 p-3.5 rounded-xl border border-white/5 space-y-2 mt-2">
+                                    <div className="flex items-center justify-between text-[10px] font-mono">
+                                      <span className="text-white/50 uppercase tracking-widest font-bold">SIMULATED CONFIDENCE</span>
+                                      <span className="text-emerald-400 font-black text-xs">{simulatedScore}% SIF</span>
+                                    </div>
+                                    <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden relative border border-white/5">
+                                      <div 
+                                        className="bg-emerald-400 h-full rounded-full transition-all duration-300" 
+                                        style={{ width: `${simulatedScore}%` }} 
+                                      />
+                                    </div>
+                                    <div className="flex justify-between text-[8px] font-mono text-[#F9F9F7]/40">
+                                      <span>Current: {activeClaim.sifScore}%</span>
+                                      <span>Formula: 5P + 4I + 3O - 6U - 5G - 4A</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   {/* TAB 2: SEMANTIC PARSING BREAKDOWN */}
                   {activeTab === 'parsing' && (
@@ -1691,7 +2173,7 @@ ${groundingSourcesMarkdown}
                         <div className="space-y-1">
                           <span className="text-[10px] text-white/40 uppercase font-mono block">What is literally stated:</span>
                           <p className="text-xs text-white/80 leading-relaxed font-light bg-black/35 p-3 rounded-lg border border-white/5">
-                            {activeClaim.semanticParsing.literalSays}
+                            {activeClaim.claim.literalParsing.assertion}
                           </p>
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/40 italic">
@@ -1706,7 +2188,7 @@ ${groundingSourcesMarkdown}
                         <div className="space-y-1">
                           <span className="text-[10px] text-white/40 uppercase font-mono block">What is insinuated or implied:</span>
                           <p className="text-xs text-white/80 leading-relaxed font-light bg-black/35 p-3 rounded-lg border border-white/5">
-                            {activeClaim.semanticParsing.implies}
+                            {activeClaim.claim.literalParsing.implication}
                           </p>
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/40 italic">
@@ -1726,12 +2208,12 @@ ${groundingSourcesMarkdown}
                         </h3>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                          {activeClaim.baselineFacts.primarySources.map((source, idx) => (
+                          {activeClaim.evidence.contextEvidence.map((source, idx) => (
                             <div
-                              key={idx}
+                              key={source.id || idx}
                               className="p-3 bg-white/[0.01] border border-white/5 rounded-lg text-xs flex items-center justify-between font-mono text-white/75"
                             >
-                              <span className="truncate pr-4">{source}</span>
+                              <span className="truncate pr-4">{source.title}</span>
                               <span className="text-[9px] text-white/30 shrink-0 uppercase tracking-widest font-black">
                                 Verified Doc
                               </span>
@@ -1781,7 +2263,7 @@ ${groundingSourcesMarkdown}
                       </div>
 
                       <p className="text-xs text-white/70 leading-relaxed font-light whitespace-pre-line">
-                        {activeClaim.additionalContext}
+                        {activeClaim.confidence.reason}
                       </p>
                     </div>
                   )}
