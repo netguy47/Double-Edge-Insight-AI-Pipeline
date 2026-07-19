@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import "./index.css";
 
 type Source = {
@@ -35,7 +35,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function checkClaim(event: React.FormEvent) {
+  async function checkClaim(event: FormEvent) {
     event.preventDefault();
     setError("");
     setReport(null);
@@ -95,27 +95,25 @@ export default function App() {
       <section className="checker" aria-label="Claim checker">
         <form onSubmit={checkClaim}>
           <label htmlFor="claim">What do you want checked?</label>
-          <textarea
-            id="claim"
-            value={claim}
-            onChange={(event) => setClaim(event.target.value)}
-            placeholder="Paste the exact claim or quotation here."
-            required
-          />
+          <textarea id="claim" value={claim} onChange={(event) => setClaim(event.target.value)} placeholder="Paste the exact claim or quotation here." required />
           <label htmlFor="source">Optional: where did you see it?</label>
-          <input
-            id="source"
-            type="url"
-            value={sourceUrl}
-            onChange={(event) => setSourceUrl(event.target.value)}
-            placeholder="https://example.com/source"
-          />
+          <input id="source" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://example.com/source" />
           <p className="helper">A link helps us find the original source. The exact wording tells us what must be proved.</p>
-          <button type="submit" disabled={loading || claim.trim().length < 8}>
-            {loading ? "Checking the evidence…" : "Check this claim"}
-          </button>
+          <button type="submit" disabled={loading || claim.trim().length < 8}>{loading ? "Checking the evidence…" : "Check this claim"}</button>
         </form>
         {error && <p className="error" role="alert">{error}</p>}
+      </section>
+
+      <section className="getting-started" aria-labelledby="getting-started-title">
+        <p className="eyebrow">GETTING STARTED</p>
+        <h2 id="getting-started-title">Check a claim in three easy steps.</h2>
+        <ol>
+          <li><span>1</span><div><strong>Paste the exact words.</strong><p>Use the full quote or claim—not just your opinion about it.</p></div></li>
+          <li><span>2</span><div><strong>Add the original link, if you have it.</strong><p>This could be a video, a post, a news story, a speech, or a government page.</p></div></li>
+          <li><span>3</span><div><strong>Read the answer, then open the receipts.</strong><p>We show what the evidence proves, what it does not prove, and the records we used.</p></div></li>
+        </ol>
+        <p className="guide-note"><strong>Try it:</strong> “The national debt passed $36 trillion.” Or paste a line from a speech and the source link.</p>
+        <p className="guide-note"><strong>What this tool will not do:</strong> It will not choose your politics or pretend an opinion is a fact. When the evidence cannot settle a claim, it will say so.</p>
       </section>
 
       {report && (
