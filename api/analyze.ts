@@ -62,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     "Never invent a source, quotation, date, number, or URL. If the evidence cannot settle the claim, use cannot_determine or unsupported.",
     "The score measures how well the evidence supports the conclusion; it does not mean that a sentence is a percentage true.",
     "answer must be a direct plain-English conclusion in one sentence. whatWeKnow, whatIsMissing, why, whatStillUnknown, and whatWouldChange must each be complete, factual paragraphs of no more than 90 words. whatIsMissing must plainly name omitted facts, definitions, dates, totals, legal standards, or context that could change how a person understands the claim. If nothing material is missing, say that plainly.",
-    "Every source must be a real, clickable URL returned or directly verified during research. Explain why each source matters."
+    "Every source must be a real, clickable URL returned or directly verified during research. Explain why each source matters. Do not put markdown links, raw URLs, citation markers, or a source list inside answer, whatWeKnow, whatIsMissing, why, whatStillUnknown, or whatWouldChange. Put all URLs only in the sources array."
   ].join(" ");
 
   try {
