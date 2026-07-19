@@ -50,8 +50,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { claim, sourceUrl } = (req.body || {}) as { claim?: string; sourceUrl?: string };
   if (!claim || claim.trim().length < 8) return res.status(400).json({ error: "Paste the exact claim or quotation you want checked." });
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return res.status(503).json({ error: "The analysis service is not configured yet." });
+  const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "The analysis service is not configured yet. Add OPENROUTER_API_KEY in Vercel, then redeploy." });
 
   const sourceNote = sourceUrl?.trim() ? "\nThe user also supplied this source URL. Treat it as a lead, not proof: " + sourceUrl.trim() : "";
   const instructions = [
@@ -66,16 +66,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   ].join(" ");
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
+      headers: {
+        "Authorization": "Bearer " + apiKey,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://double-edge-insight-ai-pipeline.vercel.app",
+        "X-Title": "Double Edge Insight"
+      },
       body: JSON.stringify({
-        model: "gpt-5.6",
-        store: false,
-        tools: [{ type: "web_search" }],
-        instructions,
-        input: "Fact-check this exact claim. Preserve its wording before evaluating it:\n\n" + claim.trim() + sourceNote,
-        text: { format: { type: "json_schema", name: "double_edge_truth_report", strict: true, schema: reportSchema } }
+        model: "openai/gpt-5.2",
+        messages: [
+          { role: "system", content: instructions },
+          { role: "user", content: "Fact-check this exact claim. Preserve its wording before evaluating it:\n\n" + claim.trim() + sourceNote }
+        ],
+        tools: [{ type: "openrouter:web_search", parameters: { engine: "auto", max_results: 6 } }],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "double_edge_truth_report", strict: true, schema: reportSchema }
+        }
       })
     });
 
@@ -83,13 +92,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!response.ok) {
       console.error("OpenAI response error", payload);
       const code = payload?.error?.code;
-      if (code === "insufficient_quota") {
-        return res.status(503).json({ error: "This site's OpenAI account needs billing or API credit before it can run claim checks. The key is connected; add credit, then try again." });
+      if (code === "insufficient_quota" || code === "insufficient_credits" || response.status === 402) {
+        return res.status(503).json({ error: "This site's OpenRouter account needs credit before it can run claim checks. The key is connected; add credit, then try again." });
       }
       return res.status(502).json({ error: "The research service could not complete this check. Please try again." });
     }
 
-    const text = outputText(payload);
+    const text = payload?.choices?.[0]?.message?.content || outputText(payload);
     if (!text) return res.status(502).json({ error: "The research service returned no report. Please try again." });
     return res.status(200).json(JSON.parse(text));
   } catch (error) {
