@@ -39,11 +39,7 @@ const reportSchema = {
 
 function outputText(response: any) {
   if (typeof response.output_text === "string") return response.output_text;
-  return (response.output || [])
-    .flatMap((item: any) => item.content || [])
-    .filter((part: any) => part.type === "output_text")
-    .map((part: any) => part.text)
-    .join("");
+  return (response.output || []).flatMap((item: any) => item.content || []).filter((part: any) => part.type === "output_text").map((part: any) => part.text).join("");
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -51,19 +47,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Use POST." });
 
   const { claim, sourceUrl } = (req.body || {}) as { claim?: string; sourceUrl?: string };
-  if (!claim || claim.trim().length < 8) {
-    return res.status(400).json({ error: "Paste the exact claim or quotation you want checked." });
-  }
+  if (!claim || claim.trim().length < 8) return res.status(400).json({ error: "Paste the exact claim or quotation you want checked." });
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return res.status(503).json({ error: "Analysis service is not configured yet." });
-  }
+  if (!apiKey) return res.status(503).json({ error: "The analysis service is not configured yet." });
 
-  const sourceNote = sourceUrl?.trim()
-    ? "\nThe user also supplied this source URL. Treat it as a lead, not proof: " + sourceUrl.trim()
-    : "";
-
+  const sourceNote = sourceUrl?.trim() ? "\nThe user also supplied this source URL. Treat it as a lead, not proof: " + sourceUrl.trim() : "";
   const instructions = [
     "You are Double Edge Insight's evidence-first fact-checking researcher.",
     "Write for an ordinary citizen or first-time voter. Use short, plain sentences.",
@@ -78,36 +67,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
-      headers: {
-        "Authorization": "Bearer " + apiKey,
-        "Content-Type": "application/json"
-      },
+      headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-5.6",
         store: false,
         tools: [{ type: "web_search" }],
         instructions,
         input: "Fact-check this exact claim. Preserve its wording before evaluating it:\n\n" + claim.trim() + sourceNote,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "double_edge_truth_report",
-            strict: true,
-            schema: reportSchema
-          }
-        }
+        text: { format: { type: "json_schema", name: "double_edge_truth_report", strict: true, schema: reportSchema } }
       })
     });
 
     const payload = await response.json();
     if (!response.ok) {
       console.error("OpenAI response error", payload);
+      const code = payload?.error?.code;
+      if (code === "insufficient_quota") {
+        return res.status(503).json({ error: "This site's OpenAI account needs billing or API credit before it can run claim checks. The key is connected; add credit, then try again." });
+      }
       return res.status(502).json({ error: "The research service could not complete this check. Please try again." });
     }
 
     const text = outputText(payload);
     if (!text) return res.status(502).json({ error: "The research service returned no report. Please try again." });
-
     return res.status(200).json(JSON.parse(text));
   } catch (error) {
     console.error("Analysis error", error);
