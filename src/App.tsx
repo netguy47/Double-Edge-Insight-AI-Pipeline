@@ -16,6 +16,7 @@ type Report = {
   why: string;
   whatStillUnknown: string;
   whatWouldChange: string;
+  whatIsMissing: string;
   score: number;
   sources: Source[];
 };
@@ -34,6 +35,11 @@ export default function App() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  function useExample(example: string) {
+    setClaim(example);
+    document.getElementById("claim")?.focus();
+  }
 
   async function checkClaim(event: FormEvent) {
     event.preventDefault();
@@ -92,6 +98,13 @@ export default function App() {
         <p className="intro">Paste a claim, quotation, or a link. We will look for the original records, explain what they show, and tell you what remains uncertain.</p>
       </section>
 
+      <section className="example-strip" aria-label="Example claims">
+        <p>Not sure where to start?</p>
+        <button onClick={() => useExample("The national debt passed $36 trillion.")}>Try an economic claim</button>
+        <button onClick={() => useExample("This video quote is what the speaker actually said.")}>Try a quote check</button>
+        <button onClick={() => useExample("This bill abolishes the Department of Education.")}>Try a policy claim</button>
+      </section>
+
       <section className="checker" aria-label="Claim checker">
         <form onSubmit={checkClaim}>
           <label htmlFor="claim">What do you want checked?</label>
@@ -122,11 +135,25 @@ export default function App() {
           <h2>{labels[report.status]}</h2>
           <p className="answer">{report.answer}</p>
 
+          <section className="truth-map" aria-label="Truth map">
+            <div className="truth-map-heading">
+              <p className="eyebrow">THE TRUTH MAP</p>
+              <p>Follow the evidence trail. Each step shows what the record can—and cannot—prove.</p>
+            </div>
+            <div className="map-steps">
+              <article><span>1</span><div><small>THE CLAIM</small><strong>{report.claim}</strong></div></article>
+              <article><span>2</span><div><small>THE RECORD</small><strong>{report.sources.length} source{report.sources.length === 1 ? "" : "s"} checked, beginning with original records where available.</strong></div></article>
+              <article><span>3</span><div><small>WHAT THE RECORD SHOWS</small><strong>{report.whatWeKnow}</strong></div></article>
+              <article className="map-conclusion"><span>4</span><div><small>THE CONCLUSION</small><strong>{report.answer}</strong></div></article>
+            </div>
+          </section>
+
           <div className="question-grid">
             <article><span>1</span><div><h3>What was claimed?</h3><p>{report.claim}</p></div></article>
             <article><span>2</span><div><h3>What did we find?</h3><p>{report.whatWeKnow}</p></div></article>
-            <article><span>3</span><div><h3>Why does that matter?</h3><p>{report.why}</p></div></article>
-            <article><span>4</span><div><h3>What would settle this?</h3><p>{report.whatWouldChange}</p></div></article>
+            <article><span>3</span><div><h3>What is being left out?</h3><p>{report.whatIsMissing}</p></div></article>
+            <article><span>4</span><div><h3>Why does that matter?</h3><p>{report.why}</p></div></article>
+            <article><span>5</span><div><h3>What would settle this?</h3><p>{report.whatWouldChange}</p></div></article>
           </div>
 
           <section className="receipts">
