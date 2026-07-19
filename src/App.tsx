@@ -21,6 +21,14 @@ type Report = {
   sources: Source[];
 };
 
+function plainText(value: string) {
+  return value
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "the linked receipt")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const labels: Record<Report["status"], string> = {
   verified: "The evidence supports this",
   mostly_supported: "Mostly supported",
@@ -133,7 +141,7 @@ export default function App() {
         <section className="report" aria-live="polite">
           <p className="eyebrow">YOUR ANSWER</p>
           <h2>{labels[report.status]}</h2>
-          <p className="answer">{report.answer}</p>
+          <p className="answer">{plainText(report.answer)}</p>
 
           <section className="truth-map" aria-label="Truth map">
             <div className="truth-map-heading">
@@ -141,19 +149,19 @@ export default function App() {
               <p>Follow the evidence trail. Each step shows what the record can—and cannot—prove.</p>
             </div>
             <div className="map-steps">
-              <article><span>1</span><div><small>THE CLAIM</small><strong>{report.claim}</strong></div></article>
+              <article><span>1</span><div><small>THE CLAIM</small><strong>{plainText(report.claim)}</strong></div></article>
               <article><span>2</span><div><small>THE RECORD</small><strong>{report.sources.length} source{report.sources.length === 1 ? "" : "s"} checked, beginning with original records where available.</strong></div></article>
-              <article><span>3</span><div><small>WHAT THE RECORD SHOWS</small><strong>{report.whatWeKnow}</strong></div></article>
-              <article className="map-conclusion"><span>4</span><div><small>THE CONCLUSION</small><strong>{report.answer}</strong></div></article>
+              <article><span>3</span><div><small>WHAT THE RECORD SHOWS</small><strong>{plainText(report.whatWeKnow)}</strong></div></article>
+              <article className="map-conclusion"><span>4</span><div><small>THE CONCLUSION</small><strong>{plainText(report.answer)}</strong></div></article>
             </div>
           </section>
 
           <div className="question-grid">
-            <article><span>1</span><div><h3>What was claimed?</h3><p>{report.claim}</p></div></article>
-            <article><span>2</span><div><h3>What did we find?</h3><p>{report.whatWeKnow}</p></div></article>
-            <article><span>3</span><div><h3>What is being left out?</h3><p>{report.whatIsMissing}</p></div></article>
-            <article><span>4</span><div><h3>Why does that matter?</h3><p>{report.why}</p></div></article>
-            <article><span>5</span><div><h3>What would settle this?</h3><p>{report.whatWouldChange}</p></div></article>
+            <article><span>1</span><div><h3>What was claimed?</h3><p>{plainText(report.claim)}</p></div></article>
+            <article><span>2</span><div><h3>What did we find?</h3><p>{plainText(report.whatWeKnow)}</p></div></article>
+            <article><span>3</span><div><h3>What is being left out?</h3><p>{plainText(report.whatIsMissing)}</p></div></article>
+            <article><span>4</span><div><h3>Why does that matter?</h3><p>{plainText(report.why)}</p></div></article>
+            <article><span>5</span><div><h3>What would settle this?</h3><p>{plainText(report.whatWouldChange)}</p></div></article>
           </div>
 
           <section className="receipts">
@@ -164,7 +172,7 @@ export default function App() {
                 <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
                   <span className={"tag " + source.kind}>{source.kind === "primary" ? "PRIMARY RECORD" : source.kind === "independent" ? "INDEPENDENT CHECK" : "CONTEXT"}</span>
                   <strong>{source.title}</strong>
-                  <small>{source.whyItMatters}</small>
+                  <small>{plainText(source.whyItMatters)}</small>
                   <b>Open receipt ↗</b>
                 </a>
               ))}
@@ -174,7 +182,7 @@ export default function App() {
           <details>
             <summary>For researchers: confidence and unresolved questions</summary>
             <p><strong>Evidence confidence: {report.score}/100.</strong> This score reflects the strength and completeness of the evidence, not the percentage of a sentence that is true.</p>
-            <p><strong>Still unknown:</strong> {report.whatStillUnknown}</p>
+            <p><strong>Still unknown:</strong> {plainText(report.whatStillUnknown)}</p>
           </details>
 
           <div className="actions">
